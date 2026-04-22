@@ -5,18 +5,39 @@
 
 import Foundation
 
+/// Thrown when the caller tries to make a request without a user-provided
+/// Anthropic API key in the key store.
+struct ClaudeAPIMissingAPIKeyError: LocalizedError {
+    var errorDescription: String? {
+        "Add your Anthropic API key in the Clicky menu bar panel to start chatting."
+    }
+}
+
 /// Claude API helper with streaming for progressive text display.
+/// Calls api.anthropic.com directly using a user-provided API key pulled
+/// from `ClickyAPIKeyStore` on every request, so the latest value is
+/// always used without needing to rebuild the client.
 class ClaudeAPI {
     private static let tlsWarmupLock = NSLock()
     private static var hasStartedTLSWarmup = false
 
-    private let apiURL: URL
+    /// Anthropic Messages API endpoint. Hardcoded because this client is
+    /// tied 1:1 to Anthropic — a BYO key is meaningless against any
+    /// other host.
+    private static let anthropicMessagesAPIURL = URL(string: "https://api.anthropic.com/v1/messages")!
+
+    /// Anthropic API version header value. The Messages API is stable
+    /// under this date string; newer versions are opt-in.
+    private static let anthropicAPIVersionHeaderValue = "2023-06-01"
+
     var model: String
     private let session: URLSession
+    private let apiKeyStore: ClickyAPIKeyStore
 
-    init(proxyURL: String, model: String = "claude-sonnet-4-6") {
-        self.apiURL = URL(string: proxyURL)!
+    @MainActor
+    init(model: String = "claude-sonnet-4-6", apiKeyStore: ClickyAPIKeyStore? = nil) {
         self.model = model
+        self.apiKeyStore = apiKeyStore ?? ClickyAPIKeyStore.shared
 
         // Use .default instead of .ephemeral so TLS session tickets are cached.
         // Ephemeral sessions do a full TLS handshake on every request, which causes
@@ -36,11 +57,26 @@ class ClaudeAPI {
         warmUpTLSConnectionIfNeeded()
     }
 
-    private func makeAPIRequest() -> URLRequest {
-        var request = URLRequest(url: apiURL)
+    /// Reads the user's Anthropic API key from the key store at request
+    /// time so edits in the settings UI take effect immediately.
+    @MainActor
+    private func currentAnthropicAPIKey() throws -> String {
+        guard let anthropicAPIKey = apiKeyStore.value(for: .anthropicAPIKey) else {
+            throw ClaudeAPIMissingAPIKeyError()
+        }
+        return anthropicAPIKey
+    }
+
+    @MainActor
+    private func makeAPIRequest() throws -> URLRequest {
+        let anthropicAPIKey = try currentAnthropicAPIKey()
+
+        var request = URLRequest(url: Self.anthropicMessagesAPIURL)
         request.httpMethod = "POST"
         request.timeoutInterval = 120
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(anthropicAPIKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(Self.anthropicAPIVersionHeaderValue, forHTTPHeaderField: "anthropic-version")
         return request
     }
 
@@ -73,7 +109,10 @@ class ClaudeAPI {
 
         guard shouldStartTLSWarmup else { return }
 
-        guard var warmupURLComponents = URLComponents(url: apiURL, resolvingAgainstBaseURL: false) else {
+        guard var warmupURLComponents = URLComponents(
+            url: Self.anthropicMessagesAPIURL,
+            resolvingAgainstBaseURL: false
+        ) else {
             return
         }
 
@@ -98,6 +137,7 @@ class ClaudeAPI {
     /// Send a vision request to Claude with streaming.
     /// Calls `onTextChunk` on the main actor each time new text arrives so the UI updates progressively.
     /// Returns the full accumulated text and total duration when the stream completes.
+    @MainActor
     func analyzeImageStreaming(
         images: [(data: Data, label: String)],
         systemPrompt: String,
@@ -107,7 +147,7 @@ class ClaudeAPI {
     ) async throws -> (text: String, duration: TimeInterval) {
         let startTime = Date()
 
-        var request = makeAPIRequest()
+        var request = try makeAPIRequest()
 
         // Build messages array
         var messages: [[String: Any]] = []
@@ -212,6 +252,7 @@ class ClaudeAPI {
     }
 
     /// Non-streaming fallback for validation requests where we don't need progressive display.
+    @MainActor
     func analyzeImage(
         images: [(data: Data, label: String)],
         systemPrompt: String,
@@ -220,7 +261,7 @@ class ClaudeAPI {
     ) async throws -> (text: String, duration: TimeInterval) {
         let startTime = Date()
 
-        var request = makeAPIRequest()
+        var request = try makeAPIRequest()
 
         var messages: [[String: Any]] = []
         for (userPlaceholder, assistantResponse) in conversationHistory {

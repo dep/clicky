@@ -17,15 +17,30 @@ struct AssemblyAIStreamingTranscriptionProviderError: LocalizedError {
 }
 
 final class AssemblyAIStreamingTranscriptionProvider: BuddyTranscriptionProvider {
-    /// URL for the Cloudflare Worker endpoint that returns a short-lived
-    /// AssemblyAI streaming token. The real API key never leaves the server.
-    private static let tokenProxyURL = "https://your-worker-name.your-subdomain.workers.dev/transcribe-token"
+    /// AssemblyAI temporary-token endpoint. The client calls this with the
+    /// user's long-lived API key and gets back a short-lived token that
+    /// is safe to pass to the browser-exposed websocket as a query param.
+    private static let temporaryTokenURLString = "https://streaming.assemblyai.com/v3/token?expires_in_seconds=480"
 
     let displayName = "AssemblyAI"
     let requiresSpeechRecognitionPermission = false
 
-    var isConfigured: Bool { true }
-    var unavailableExplanation: String? { nil }
+    /// The provider is "configured" only when the user has pasted an
+    /// AssemblyAI API key in the settings panel. Without a key, the
+    /// factory falls back to Apple Speech so the app still works.
+    /// Reads the Keychain-backed key synchronously by hopping briefly
+    /// onto the main actor via `MainActor.assumeIsolated` — both the
+    /// factory and the settings UI call this from the main actor.
+    var isConfigured: Bool {
+        MainActor.assumeIsolated {
+            ClickyAPIKeyStore.shared.hasAssemblyAIAPIKey
+        }
+    }
+
+    var unavailableExplanation: String? {
+        guard !isConfigured else { return nil }
+        return "AssemblyAI streaming transcription is not configured. Add your AssemblyAI API key in the Clicky menu bar panel."
+    }
 
     /// Single long-lived URLSession shared across all streaming sessions.
     /// Creating and invalidating a URLSession per session corrupts the OS
@@ -39,7 +54,7 @@ final class AssemblyAIStreamingTranscriptionProvider: BuddyTranscriptionProvider
         onFinalTranscriptReady: @escaping (String) -> Void,
         onError: @escaping (Error) -> Void
     ) async throws -> any BuddyStreamingTranscriptionSession {
-        // Fetch a fresh temporary token from the proxy before each session
+        // Fetch a fresh temporary token directly from AssemblyAI each session
         let temporaryToken = try await fetchTemporaryToken()
         print("🎙️ AssemblyAI: fetched temporary token (\(temporaryToken.prefix(20))...)")
 
@@ -57,10 +72,22 @@ final class AssemblyAIStreamingTranscriptionProvider: BuddyTranscriptionProvider
         return session
     }
 
-    /// Calls the Cloudflare Worker to get a short-lived AssemblyAI token.
+    /// Calls AssemblyAI directly with the user's API key to mint a
+    /// short-lived streaming token. The long-lived key stays in the
+    /// Keychain; only the short-lived token is passed as a query param
+    /// to the websocket.
     private func fetchTemporaryToken() async throws -> String {
-        var request = URLRequest(url: URL(string: Self.tokenProxyURL)!)
-        request.httpMethod = "POST"
+        let assemblyAIAPIKey = await MainActor.run { ClickyAPIKeyStore.shared.value(for: .assemblyAIAPIKey) }
+
+        guard let assemblyAIAPIKey else {
+            throw AssemblyAIStreamingTranscriptionProviderError(
+                message: "Add your AssemblyAI API key in the Clicky menu bar panel to enable streaming transcription."
+            )
+        }
+
+        var request = URLRequest(url: URL(string: Self.temporaryTokenURLString)!)
+        request.httpMethod = "GET"
+        request.setValue(assemblyAIAPIKey, forHTTPHeaderField: "authorization")
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -76,7 +103,7 @@ final class AssemblyAIStreamingTranscriptionProvider: BuddyTranscriptionProvider
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let token = json["token"] as? String else {
             throw AssemblyAIStreamingTranscriptionProviderError(
-                message: "Invalid token response from proxy."
+                message: "Invalid token response from AssemblyAI."
             )
         }
 
