@@ -5,14 +5,17 @@ It's an AI teacher that lives as a buddy next to your cursor. It can see your sc
 
 ## Fork: Bring Your Own API Keys
 
-This is a fork of the original Clicky that removes the hosted proxy requirement — you bring your own API keys directly. No middleman, no subscription, no black box. Just drop your keys into the app's settings and go.
+This fork of Clicky is 100% bring-your-own-key. When you open the app you paste your API keys straight into the menu bar panel and they get stored in the macOS Keychain. The app then calls each provider's API directly from your machine — there's no middle server, nothing to deploy, nothing routed through anyone else.
 
-You'll need:
-- An Anthropic API key (Claude)
-- An ElevenLabs API key (TTS voice)
-- An AssemblyAI API key (speech-to-text)
+You need one required key and two optional keys:
 
-The Cloudflare Worker proxy is still included for anyone who wants it, but it's entirely optional. Viva la open source! 🎉
+| Key | Where to get it | What it does |
+|---|---|---|
+| **Anthropic** (required) | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) | Powers the Claude chat that sees your screen and talks back |
+| **ElevenLabs** (optional) | [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) + a voice ID | Spoken voice replies. Without it, responses are text-only |
+| **AssemblyAI** (optional) | [assemblyai.com/app/api-keys](https://www.assemblyai.com/app/api-keys) | High-quality streaming transcription. Without it, falls back to Apple's on-device Speech framework |
+
+Usage is billed directly to each provider account — Clicky
 
 Download under releases: https://github.com/dep/clicky/releases/latest
 
@@ -27,20 +30,6 @@ Here's the [original tweet](https://x.com/FarzaTV/status/2041314633978659092) th
 ![Clicky — an ai buddy that lives on your mac](clicky-demo.gif)
 
 This is the open-source version of Clicky for those that want to hack on it, build their own features, or just see how it works under the hood.
-
-## Bring your own API keys
-
-Clicky is 100% bring-your-own-key. When you open the app you paste your API keys straight into the menu bar panel and they get stored in the macOS Keychain. The app then calls each provider's API directly from your machine — there's no middle server, nothing to deploy, nothing routed through anyone else.
-
-You need one required key and two optional keys:
-
-| Key | Where to get it | What it does |
-|---|---|---|
-| **Anthropic** (required) | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) | Powers the Claude chat that sees your screen and talks back |
-| **ElevenLabs** (optional) | [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) + a voice ID | Spoken voice replies. Without it, responses are text-only |
-| **AssemblyAI** (optional) | [assemblyai.com/app/api-keys](https://www.assemblyai.com/app/api-keys) | High-quality streaming transcription. Without it, falls back to Apple's on-device Speech framework |
-
-Usage is billed directly to each provider account — Clicky itself has no backend.
 
 ## Get started with Claude Code
 
