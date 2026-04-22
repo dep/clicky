@@ -12,6 +12,7 @@ import SwiftUI
 
 struct CompanionPanelView: View {
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var apiKeyStore: ClickyAPIKeyStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -30,6 +31,11 @@ struct CompanionPanelView: View {
 
                 modelPickerRow
                     .padding(.horizontal, 16)
+
+                if apiKeyStore.hasElevenLabsAPIKey {
+                    voiceResponseToggleRow
+                        .padding(.horizontal, 16)
+                }
             }
 
             if !companionManager.allPermissionsGranted {
@@ -501,6 +507,35 @@ struct CompanionPanelView: View {
 
 
 
+    // MARK: - Voice Response Toggle
+
+    private var voiceResponseToggleRow: some View {
+        HStack {
+            HStack(spacing: 8) {
+                Image(systemName: "speaker.wave.2")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .frame(width: 16)
+
+                Text("Voice Responses")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(DS.Colors.textSecondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: Binding(
+                get: { companionManager.isVoiceResponseEnabled },
+                set: { companionManager.setVoiceResponseEnabled($0) }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .tint(DS.Colors.accent)
+            .scaleEffect(0.8)
+        }
+        .padding(.vertical, 4)
+    }
+
     // MARK: - Show Clicky Cursor Toggle
 
     private var showClickyCursorToggleRow: some View {
@@ -614,24 +649,6 @@ struct CompanionPanelView: View {
             }
             .buttonStyle(.plain)
             .pointerCursor()
-
-            if companionManager.hasCompletedOnboarding {
-                Spacer()
-
-                Button(action: {
-                    companionManager.replayOnboarding()
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "play.circle")
-                            .font(.system(size: 11, weight: .medium))
-                        Text("Watch Onboarding Again")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundColor(DS.Colors.textTertiary)
-                }
-                .buttonStyle(.plain)
-                .pointerCursor()
-            }
         }
     }
 

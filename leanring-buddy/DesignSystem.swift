@@ -142,6 +142,7 @@ enum DS {
         /// Kept distinct from the accent since it serves a different purpose
         /// (screen overlay vs in-app UI).
         static let overlayCursorBlue = Color(hex: "#3380FF")
+        static let overlayResponseBubbleBlue = Color(hex: "#1A4FAD")
 
         // ── Floating Button Gradient ─────────────────────────────────
 

@@ -26,6 +26,12 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var voiceState: CompanionVoiceState = .idle
     @Published private(set) var lastTranscript: String?
     @Published private(set) var currentAudioPowerLevel: CGFloat = 0
+    /// Accumulated Claude response text streamed in real time. Shown in the
+    /// overlay bubble while voiceState == .responding. Cleared on next request.
+    @Published private(set) var currentResponseText: String = ""
+    /// Opacity of the response text bubble. Animates to 0 after a 10s hold,
+    /// then the text is cleared. Reset to 1.0 at the start of each response.
+    @Published private(set) var responseTextBubbleOpacity: Double = 1.0
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var hasScreenRecordingPermission = false
     @Published private(set) var hasMicrophonePermission = false
@@ -85,6 +91,7 @@ final class CompanionManager: ObservableObject {
     /// Scheduled hide for transient cursor mode — cancelled if the user
     /// speaks again before the delay elapses.
     private var transientHideTask: Task<Void, Never>?
+    private var responseTextHideTask: Task<Void, Never>?
 
     /// True when all three required permissions (accessibility, screen recording,
     /// microphone) are granted. Used by the panel to show a single "all good" state.
@@ -117,6 +124,18 @@ final class CompanionManager: ObservableObject {
         selectedModel = model
         UserDefaults.standard.set(model, forKey: "selectedClaudeModel")
         claudeAPI.model = model
+    }
+
+    /// User preference for whether ElevenLabs voice responses are enabled.
+    /// When toggled off, Claude's response is shown as text only even if an
+    /// ElevenLabs key is configured. Persisted to UserDefaults.
+    @Published var isVoiceResponseEnabled: Bool = UserDefaults.standard.object(forKey: "isVoiceResponseEnabled") == nil
+        ? true
+        : UserDefaults.standard.bool(forKey: "isVoiceResponseEnabled")
+
+    func setVoiceResponseEnabled(_ enabled: Bool) {
+        isVoiceResponseEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "isVoiceResponseEnabled")
     }
 
     /// User preference for whether the Clicky cursor should be shown.
@@ -528,8 +547,11 @@ final class CompanionManager: ObservableObject {
         elevenLabsTTSClient.stopPlayback()
 
         currentResponseTask = Task {
-            // Stay in processing (spinner) state — no streaming text displayed
             voiceState = .processing
+            currentResponseText = ""
+            responseTextBubbleOpacity = 1.0
+            responseTextHideTask?.cancel()
+            responseTextHideTask = nil
 
             do {
                 // Capture all connected screens so the AI has full context
@@ -555,8 +577,22 @@ final class CompanionManager: ObservableObject {
                     systemPrompt: Self.companionVoiceResponseSystemPrompt,
                     conversationHistory: historyForAPI,
                     userPrompt: transcript,
-                    onTextChunk: { _ in
-                        // No streaming text display — spinner stays until TTS plays
+                    onTextChunk: { [weak self] accumulatedText in
+                        guard let self else { return }
+                        // Switch to responding on first chunk so the bubble appears
+                        // as text streams in, whether or not TTS is enabled.
+                        if self.voiceState == .processing {
+                            self.voiceState = .responding
+                        }
+                        // Strip any partial or complete [POINT:...] tag that may be
+                        // streaming in at the end so it never appears in the text bubble.
+                        let pointTagPattern = #"\s*\[POINT:[^\]]*\]?\s*$"#
+                        let displayText = accumulatedText.replacingOccurrences(
+                            of: pointTagPattern,
+                            with: "",
+                            options: .regularExpression
+                        )
+                        self.currentResponseText = displayText
                     }
                 )
 
@@ -637,26 +673,19 @@ final class CompanionManager: ObservableObject {
 
                 ClickyAnalytics.trackAIResponseReceived(response: spokenText)
 
-                // Play the response via TTS. Keep the spinner (processing state)
-                // until the audio actually starts playing, then switch to responding.
+                // Speak the response via TTS if enabled. The text bubble is already
+                // showing via onTextChunk above; this just adds audio on top.
                 if !spokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    // Skip TTS entirely if the user hasn't configured an
-                    // ElevenLabs key — the response text still shows on the
-                    // overlay, so the experience gracefully degrades to
-                    // text-only instead of throwing an error voice at them.
-                    if apiKeyStore.hasElevenLabsAPIKey {
+                    if apiKeyStore.hasElevenLabsAPIKey && isVoiceResponseEnabled {
                         do {
                             try await elevenLabsTTSClient.speakText(spokenText)
-                            // speakText returns after player.play() — audio is now playing
-                            voiceState = .responding
                         } catch {
                             ClickyAnalytics.trackTTSError(error: error.localizedDescription)
                             print("⚠️ ElevenLabs TTS error: \(error)")
                             speakCreditsErrorFallback()
                         }
                     } else {
-                        print("🔇 TTS skipped — no ElevenLabs API key configured")
-                        voiceState = .responding
+                        print("🔇 TTS skipped")
                     }
                 }
             } catch is CancellationError {
@@ -670,6 +699,18 @@ final class CompanionManager: ObservableObject {
             if !Task.isCancelled {
                 voiceState = .idle
                 scheduleTransientHideIfNeeded()
+                // Hold the response bubble for 10 seconds, then fade it out over 0.5s
+                responseTextHideTask = Task {
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeOut(duration: 0.5)) {
+                        responseTextBubbleOpacity = 0.0
+                    }
+                    // Wait for the fade to finish before clearing the text
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard !Task.isCancelled else { return }
+                    currentResponseText = ""
+                }
             }
         }
     }

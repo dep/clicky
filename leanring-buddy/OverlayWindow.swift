@@ -236,41 +236,26 @@ struct BlueCursorView: View {
                     }
             }
 
-            // Navigation pointer bubble — shown when buddy arrives at a detected element.
-            // Pops in with a scale-bounce (0.5x → 1.0x spring) and a bright initial
-            // glow that settles, creating a "materializing" effect.
-            if buddyNavigationMode == .pointingAtTarget && !navigationBubbleText.isEmpty {
-                Text(navigationBubbleText)
-                    .font(.system(size: 11, weight: .medium))
+            // Response text bubble — shown while Claude is streaming and for 10s after.
+            // Fades out over 0.5s, driven by responseTextBubbleOpacity in CompanionManager.
+            if isCursorOnThisScreen && !companionManager.currentResponseText.isEmpty {
+                Text(companionManager.currentResponseText)
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.white)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(
-                                color: DS.Colors.overlayCursorBlue.opacity(0.5 + (1.0 - navigationBubbleScale) * 1.0),
-                                radius: 6 + (1.0 - navigationBubbleScale) * 16,
-                                x: 0, y: 0
-                            )
+                            .fill(DS.Colors.overlayResponseBubbleBlue)
+                            .shadow(color: DS.Colors.overlayResponseBubbleBlue.opacity(0.5), radius: 6, x: 0, y: 0)
                     )
-                    .fixedSize()
-                    .overlay(
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(key: NavigationBubbleSizePreferenceKey.self, value: geo.size)
-                        }
-                    )
-                    .scaleEffect(navigationBubbleScale)
-                    .opacity(navigationBubbleOpacity)
-                    .position(x: cursorPosition.x + 10 + (navigationBubbleSize.width / 2), y: cursorPosition.y + 18)
+                    .frame(maxWidth: 280, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .position(x: cursorPosition.x + 10 + 140, y: cursorPosition.y + 18)
+                    .opacity(companionManager.responseTextBubbleOpacity)
                     .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: navigationBubbleScale)
-                    .animation(.easeOut(duration: 0.5), value: navigationBubbleOpacity)
-                    .onPreferenceChange(NavigationBubbleSizePreferenceKey.self) { newSize in
-                        navigationBubbleSize = newSize
-                    }
             }
+
 
             // Blue triangle cursor — shown when idle or while TTS is playing (responding).
             // All three states (triangle, waveform, spinner) stay in the view tree
@@ -544,36 +529,17 @@ struct BlueCursorView: View {
         }
     }
 
-    /// Transitions to pointing mode — shows a speech bubble with a bouncy
-    /// scale-in entrance and variable-speed character streaming.
+    /// Transitions to pointing mode — holds at the target for 3 seconds then flies back.
     private func startPointingAtElement() {
         buddyNavigationMode = .pointingAtTarget
 
         // Rotate back to default pointer angle now that we've arrived
         triangleRotationDegrees = -35.0
 
-        // Reset navigation bubble state — start small for the scale-bounce entrance
-        navigationBubbleText = ""
-        navigationBubbleOpacity = 1.0
-        navigationBubbleSize = .zero
-        navigationBubbleScale = 0.5
-
-        // Use custom bubble text from the companion manager (e.g. onboarding demo)
-        // if available, otherwise fall back to a random pointer phrase
-        let pointerPhrase = companionManager.detectedElementBubbleText
-            ?? navigationPointerPhrases.randomElement()
-            ?? "right here!"
-
-        streamNavigationBubbleCharacter(phrase: pointerPhrase, characterIndex: 0) {
-            // All characters streamed — hold for 3 seconds, then fly back
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                guard self.buddyNavigationMode == .pointingAtTarget else { return }
-                self.navigationBubbleOpacity = 0.0
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    guard self.buddyNavigationMode == .pointingAtTarget else { return }
-                    self.startFlyingBackToCursor()
-                }
-            }
+        // Hold at the element for 3 seconds, then fly back to the cursor
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            guard self.buddyNavigationMode == .pointingAtTarget else { return }
+            self.startFlyingBackToCursor()
         }
     }
 
