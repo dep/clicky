@@ -1,6 +1,25 @@
 # Hi, this is Clicky.
 It's an AI teacher that lives as a buddy next to your cursor. It can see your screen, talk to you, and even point at stuff. Kinda like having a real teacher next to you.
 
+---
+
+## Fork: Bring Your Own API Keys
+
+This is a fork of the original Clicky that removes the hosted proxy requirement — you bring your own API keys directly. No middleman, no subscription, no black box. Just drop your keys into the app's settings and go.
+
+You'll need:
+- An Anthropic API key (Claude)
+- An ElevenLabs API key (TTS voice)
+- An AssemblyAI API key (speech-to-text)
+
+The Cloudflare Worker proxy is still included for anyone who wants it, but it's entirely optional. Viva la open source! 🎉
+
+Download under releases: https://github.com/dep/clicky/releases/latest
+
+---
+
+Original README continues...
+
 Download it [here](https://www.clicky.so/) for free.
 
 Here's the [original tweet](https://x.com/FarzaTV/status/2041314633978659092) that kinda blew up for a demo for more context.
