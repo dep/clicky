@@ -36,6 +36,9 @@ struct CompanionPanelView: View {
                     voiceResponseToggleRow
                         .padding(.horizontal, 16)
                 }
+
+                showClickyCursorToggleRow
+                    .padding(.horizontal, 16)
             }
 
             if !companionManager.allPermissionsGranted {

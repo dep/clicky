@@ -238,7 +238,8 @@ struct BlueCursorView: View {
 
             // Response text bubble — shown while Claude is streaming and for 10s after.
             // Fades out over 0.5s, driven by responseTextBubbleOpacity in CompanionManager.
-            if isCursorOnThisScreen && !companionManager.currentResponseText.isEmpty {
+            // Hidden in Voice Mode since ElevenLabs speaks the response aloud.
+            if isCursorOnThisScreen && !companionManager.currentResponseText.isEmpty && !companionManager.isVoiceResponseEnabled {
                 Text(companionManager.currentResponseText)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.white)
