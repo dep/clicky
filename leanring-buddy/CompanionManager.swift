@@ -485,12 +485,11 @@ final class CompanionManager: ObservableObject {
                 )
             }
         case .released:
-            // Cancel the pending start task in case the user released the shortcut
-            // before the async startPushToTalk had a chance to begin recording.
-            // Without this, a quick press-and-release drops the release event and
-            // leaves the waveform overlay stuck on screen indefinitely.
+            // Do NOT cancel pendingKeyboardShortcutStartTask here — if AssemblyAI's token
+            // fetch is still in flight, cancelling the task kills the network request and
+            // drops the transcript. Instead, let the start task finish and allow
+            // stopPushToTalkFromKeyboardShortcut to finalize normally once the session is ready.
             ClickyAnalytics.trackPushToTalkReleased()
-            pendingKeyboardShortcutStartTask?.cancel()
             pendingKeyboardShortcutStartTask = nil
             buddyDictationManager.stopPushToTalkFromKeyboardShortcut()
         case .none:

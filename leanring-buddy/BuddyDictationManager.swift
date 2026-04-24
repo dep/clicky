@@ -449,19 +449,19 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
         do {
             try await startRecognitionSession()
-            guard !Task.isCancelled else {
-                print("🎙️ BuddyDictationManager: start cancelled (shortcut released during session start)")
-                audioEngine.stop()
-                audioEngine.inputNode.removeTap(onBus: 0)
-                activeTranscriptionSession?.cancel()
-                resetSessionState()
-                return
-            }
             if startSource == .microphoneButton {
                 microphoneButtonRecordingStartedAt = Date()
             }
             isPreparingToRecord = false
             print("🎙️ BuddyDictationManager: recognition session started")
+
+            // If the user released the shortcut while the session was starting (e.g. during
+            // AssemblyAI token fetch), stopPushToTalk was called but had no activeTranscriptionSession
+            // to finalize. Now that the session is ready, trigger finalization immediately.
+            if isFinalizingTranscript {
+                print("🎙️ BuddyDictationManager: stop was requested during session start — finalizing now")
+                activeTranscriptionSession?.requestFinalTranscript()
+            }
         } catch {
             isPreparingToRecord = false
             lastErrorMessage = userFacingErrorMessage(
